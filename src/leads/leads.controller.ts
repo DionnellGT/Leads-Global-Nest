@@ -21,6 +21,7 @@ import type { Response } from 'express';
 import { LeadsService } from './leads.service';
 import { LeadFiltersDto } from './dto/lead-filters.dto';
 import { UpdateLeadEstadoDto } from './dto/update-estado.dto';
+import { PaginatedLeadsDto } from './dto/paginated-leads.dto';
 import { Lead } from './entities/lead.entity';
 
 @ApiTags('leads')
@@ -79,8 +80,14 @@ export class LeadsController {
   }
 
   // ── 3) Listado de leads con filtros (para la tabla en React) ──
-  @ApiOperation({ summary: 'Lista leads guardados, con filtros opcionales' })
-  @ApiResponse({ status: 200, description: 'Listado de leads', type: [Lead] })
+  @ApiOperation({
+    summary: 'Lista leads guardados, con filtros y paginación opcionales',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Listado paginado de leads',
+    type: PaginatedLeadsDto,
+  })
   @Get('leads')
   findAll(@Query() filters: LeadFiltersDto) {
     return this.leadsService.findAll(filters);

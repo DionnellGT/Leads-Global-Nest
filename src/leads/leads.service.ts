@@ -1,12 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, FindOptionsWhere, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import * as ExcelJS from 'exceljs';
 import { Lead } from './entities/lead.entity';
 import { FacebookService } from '../facebook/facebook.service';
 import { LeadFiltersDto } from './dto/lead-filters.dto';
 
 export type LeadFilters = LeadFiltersDto;
+
+export interface PaginatedLeads {
+  data: Lead[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
 
 @Injectable()
 export class LeadsService {
@@ -55,36 +63,55 @@ export class LeadsService {
     return saved;
   }
 
-  async findAll(filters: LeadFilters) {
-    const where: FindOptionsWhere<Lead> = {};
+  /**
+   * Arma el query base con todos los filtros (fecha, estado, form,
+   * campaña y búsqueda de texto libre), sin paginar. Se reutiliza
+   * tanto para el listado paginado como para la exportación a Excel.
+   */
+  private buildFilteredQuery(filters: LeadFilters) {
+    const qb = this.leadsRepo
+      .createQueryBuilder('lead')
+      .orderBy('lead.leadCreatedTime', 'DESC');
 
     if (filters.desde && filters.hasta) {
-      where.leadCreatedTime = Between(
-        new Date(filters.desde),
-        new Date(filters.hasta),
-      );
+      qb.andWhere('lead.leadCreatedTime BETWEEN :desde AND :hasta', {
+        desde: new Date(filters.desde),
+        hasta: new Date(filters.hasta),
+      });
     }
-    if (filters.estado) where.estado = filters.estado;
-    if (filters.formId) where.formId = filters.formId;
-    if (filters.campaignId) where.campaignId = filters.campaignId;
-
-    let leads = await this.leadsRepo.find({
-      where,
-      order: { leadCreatedTime: 'DESC' },
-    });
-
-    // Búsqueda de texto libre sobre nombre/correo/telefono
+    if (filters.estado) qb.andWhere('lead.estado = :estado', { estado: filters.estado });
+    if (filters.formId) qb.andWhere('lead.formId = :formId', { formId: filters.formId });
+    if (filters.campaignId) {
+      qb.andWhere('lead.campaignId = :campaignId', {
+        campaignId: filters.campaignId,
+      });
+    }
     if (filters.search) {
-      const q = filters.search.toLowerCase();
-      leads = leads.filter(
-        (l) =>
-          l.nombre?.toLowerCase().includes(q) ||
-          l.correo?.toLowerCase().includes(q) ||
-          l.telefono?.toLowerCase().includes(q),
+      qb.andWhere(
+        '(lead.nombre ILIKE :search OR lead.correo ILIKE :search OR lead.telefono ILIKE :search)',
+        { search: `%${filters.search}%` },
       );
     }
 
-    return leads;
+    return qb;
+  }
+
+  async findAll(filters: LeadFilters): Promise<PaginatedLeads> {
+    const page = filters.page ?? 1;
+    const limit = filters.limit ?? 20;
+
+    const [data, total] = await this.buildFilteredQuery(filters)
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+    };
   }
 
   async updateEstado(id: string, estado: string) {
@@ -94,9 +121,11 @@ export class LeadsService {
 
   /**
    * Genera un archivo Excel en memoria (buffer) con los leads filtrados.
+   * A propósito ignora page/limit: exporta TODOS los resultados que
+   * cumplen los filtros, no solo la página visible en pantalla.
    */
   async exportToExcel(filters: LeadFilters): Promise<Buffer> {
-    const leads = await this.findAll(filters);
+    const leads = await this.buildFilteredQuery(filters).getMany();
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Leads');
