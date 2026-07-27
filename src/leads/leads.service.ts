@@ -1,18 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, FindOptionsWhere, ILike, Repository } from 'typeorm';
+import { Between, FindOptionsWhere, Repository } from 'typeorm';
 import * as ExcelJS from 'exceljs';
 import { Lead } from './entities/lead.entity';
 import { FacebookService } from '../facebook/facebook.service';
+import { LeadFiltersDto } from './dto/lead-filters.dto';
 
-export interface LeadFilters {
-  desde?: string; // fecha ISO, ej. 2026-07-20
-  hasta?: string;
-  estado?: string;
-  formId?: string;
-  campaignId?: string;
-  search?: string; // busca en nombre/correo/telefono
-}
+export type LeadFilters = LeadFiltersDto;
 
 @Injectable()
 export class LeadsService {

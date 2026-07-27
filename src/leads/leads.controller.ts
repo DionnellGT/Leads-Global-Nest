@@ -10,9 +10,20 @@ import {
   Res,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  ApiExcludeEndpoint,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { Response } from 'express';
 import { LeadsService } from './leads.service';
+import { LeadFiltersDto } from './dto/lead-filters.dto';
+import { UpdateLeadEstadoDto } from './dto/update-estado.dto';
+import { Lead } from './entities/lead.entity';
 
+@ApiTags('leads')
 @Controller()
 export class LeadsController {
   private readonly logger = new Logger(LeadsController.name);
@@ -23,6 +34,9 @@ export class LeadsController {
   ) {}
 
   // ── 1) Verificación del webhook (Meta la llama una sola vez al configurar) ──
+  // Se excluye de Swagger: no es un endpoint pensado para consumo propio,
+  // solo lo llama Meta.
+  @ApiExcludeEndpoint()
   @Get('webhook/facebook')
   verifyWebhook(
     @Query('hub.mode') mode: string,
@@ -39,6 +53,7 @@ export class LeadsController {
   }
 
   // ── 2) Recepción de eventos en tiempo real (nuevo lead enviado) ──
+  @ApiExcludeEndpoint()
   @Post('webhook/facebook')
   async receiveWebhook(@Body() body: any, @Res() res: Response) {
     // Respondemos 200 de inmediato para que Meta no reintente,
@@ -64,50 +79,28 @@ export class LeadsController {
   }
 
   // ── 3) Listado de leads con filtros (para la tabla en React) ──
+  @ApiOperation({ summary: 'Lista leads guardados, con filtros opcionales' })
+  @ApiResponse({ status: 200, description: 'Listado de leads', type: [Lead] })
   @Get('leads')
-  findAll(
-    @Query('desde') desde?: string,
-    @Query('hasta') hasta?: string,
-    @Query('estado') estado?: string,
-    @Query('formId') formId?: string,
-    @Query('campaignId') campaignId?: string,
-    @Query('search') search?: string,
-  ) {
-    return this.leadsService.findAll({
-      desde,
-      hasta,
-      estado,
-      formId,
-      campaignId,
-      search,
-    });
+  findAll(@Query() filters: LeadFiltersDto) {
+    return this.leadsService.findAll(filters);
   }
 
   // ── 4) Actualizar estado de un lead (Nuevo/Contactado/Vendido) ──
+  @ApiOperation({ summary: 'Actualiza el estado de un lead' })
+  @ApiParam({ name: 'id', description: 'UUID del lead' })
+  @ApiResponse({ status: 200, description: 'Lead actualizado', type: Lead })
   @Patch('leads/:id/estado')
-  updateEstado(@Param('id') id: string, @Body('estado') estado: string) {
-    return this.leadsService.updateEstado(id, estado);
+  updateEstado(@Param('id') id: string, @Body() dto: UpdateLeadEstadoDto) {
+    return this.leadsService.updateEstado(id, dto.estado);
   }
 
   // ── 5) Exportar a Excel con los mismos filtros ──
+  @ApiOperation({ summary: 'Exporta los leads filtrados a un archivo .xlsx' })
+  @ApiResponse({ status: 200, description: 'Archivo Excel generado' })
   @Get('leads/export')
-  async export(
-    @Res() res: Response,
-    @Query('desde') desde?: string,
-    @Query('hasta') hasta?: string,
-    @Query('estado') estado?: string,
-    @Query('formId') formId?: string,
-    @Query('campaignId') campaignId?: string,
-    @Query('search') search?: string,
-  ) {
-    const buffer = await this.leadsService.exportToExcel({
-      desde,
-      hasta,
-      estado,
-      formId,
-      campaignId,
-      search,
-    });
+  async export(@Res() res: Response, @Query() filters: LeadFiltersDto) {
+    const buffer = await this.leadsService.exportToExcel(filters);
 
     const fileName = `Leads_${new Date().toISOString().slice(0, 10)}.xlsx`;
     res.set({
