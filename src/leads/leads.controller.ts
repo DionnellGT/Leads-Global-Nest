@@ -19,6 +19,7 @@ import {
 } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { LeadsService } from './leads.service';
+import { GraphApiError } from '../facebook/facebook.service';
 import { LeadFiltersDto } from './dto/lead-filters.dto';
 import { UpdateLeadEstadoDto } from './dto/update-estado.dto';
 import { PaginatedLeadsDto } from './dto/paginated-leads.dto';
@@ -75,7 +76,16 @@ export class LeadsController {
         }
       }
     } catch (err) {
-      this.logger.error('Error procesando webhook de leads', err as Error);
+      if (err instanceof GraphApiError) {
+        // Ya viene clasificado desde FacebookService (token vencido,
+        // permisos insuficientes, rate limit, etc.) — se loguea con
+        // los códigos de Meta para facilitar el diagnóstico.
+        this.logger.error(
+          `Error de Graph API procesando webhook de leads [code=${err.fbCode}, subcode=${err.fbSubcode}]: ${err.message}`,
+        );
+      } else {
+        this.logger.error('Error inesperado procesando webhook de leads', err as Error);
+      }
     }
   }
 

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios from 'axios';
+import axios, { isAxiosError } from 'axios';
 
 export interface FacebookLeadData {
   id: string;
@@ -10,6 +10,23 @@ export interface FacebookLeadData {
   campaign_id?: string;
   campaign_name?: string;
   form_name?: string;
+}
+
+/**
+ * Error de dominio que envuelve las respuestas de error de la Graph API,
+ * clasificándolas para que quien las capture (LeadsService) sepa si vale
+ * la pena alertar o si es un caso esperado (ej. lead de prueba/simulado).
+ */
+export class GraphApiError extends Error {
+  constructor(
+    message: string,
+    public readonly fbCode?: number,
+    public readonly fbSubcode?: number,
+    public readonly isSimulatedLead = false,
+  ) {
+    super(message);
+    this.name = 'GraphApiError';
+  }
 }
 
 @Injectable()
@@ -30,14 +47,74 @@ export class FacebookService {
    */
   async getLeadData(leadgenId: string): Promise<FacebookLeadData> {
     const url = `${this.baseUrl}/${leadgenId}`;
-    const { data } = await axios.get(url, {
-      params: {
-        access_token: this.pageAccessToken,
-        fields:
-          'id,created_time,form_id,field_data,campaign_id,campaign_name,form_name',
-      },
-    });
-    return data;
+    try {
+      const { data } = await axios.get(url, {
+        params: {
+          access_token: this.pageAccessToken,
+          fields:
+            'id,created_time,form_id,field_data,campaign_id,campaign_name,form_name',
+        },
+      });
+      return data;
+    } catch (err) {
+      throw this.toGraphApiError(err, leadgenId);
+    }
+  }
+
+  /**
+   * Traduce el error crudo de Axios/Graph API en un GraphApiError,
+   * distinguiendo el caso típico de "lead simulado desde el panel de
+   * Meta" (leadgen_id que no existe realmente, ej. el botón "Probar")
+   * de otros errores que sí ameritan revisión (token vencido, permisos,
+   * rate limit, etc.).
+   */
+  private toGraphApiError(err: unknown, leadgenId: string): GraphApiError {
+    if (!isAxiosError(err)) {
+      return new GraphApiError(
+        `Error inesperado consultando el lead ${leadgenId}: ${(err as Error).message}`,
+      );
+    }
+
+    const fbError = err.response?.data?.error;
+    const fbCode: number | undefined = fbError?.code;
+    const fbSubcode: number | undefined = fbError?.error_subcode;
+    const fbMessage: string = fbError?.message ?? err.message;
+
+    // code 100 + subcode 33: "Object does not exist" — el caso típico
+    // cuando Meta envía un leadgen_id ficticio (ej. botón "Probar" del
+    // panel, o eventos de webhooks de prueba en general).
+    const isSimulatedLead = fbCode === 100 && fbSubcode === 33;
+
+    if (isSimulatedLead) {
+      return new GraphApiError(
+        `El leadgen_id "${leadgenId}" no existe en Meta (probablemente un evento de prueba simulado, no un lead real).`,
+        fbCode,
+        fbSubcode,
+        true,
+      );
+    }
+
+    if (fbCode === 190) {
+      return new GraphApiError(
+        `Token de acceso inválido o vencido al consultar el lead ${leadgenId}. Revisa FB_PAGE_ACCESS_TOKEN.`,
+        fbCode,
+        fbSubcode,
+      );
+    }
+
+    if (fbCode === 10 || fbCode === 200) {
+      return new GraphApiError(
+        `Permisos insuficientes para leer el lead ${leadgenId} (revisa leads_retrieval / pages_manage_metadata).`,
+        fbCode,
+        fbSubcode,
+      );
+    }
+
+    return new GraphApiError(
+      `Error de la Graph API al consultar el lead ${leadgenId}: ${fbMessage}`,
+      fbCode,
+      fbSubcode,
+    );
   }
 
   /**

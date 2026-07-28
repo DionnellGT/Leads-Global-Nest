@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as ExcelJS from 'exceljs';
 import { Lead } from './entities/lead.entity';
-import { FacebookService } from '../facebook/facebook.service';
+import { FacebookService, GraphApiError } from '../facebook/facebook.service';
 import { LeadFiltersDto } from './dto/lead-filters.dto';
 
 export type LeadFilters = LeadFiltersDto;
@@ -29,6 +29,10 @@ export class LeadsService {
    * Paso 2 del flujo: dado un leadgen_id recibido por el webhook,
    * consulta la Graph API y guarda el lead en la base de datos.
    * Es idempotente: si el leadgen_id ya existe, no lo duplica.
+   *
+   * Devuelve `null` cuando el leadgen_id corresponde a un evento
+   * simulado (ej. botón "Probar" del panel de Meta) — no es un error
+   * real, así que no debe tratarse como tal en los logs ni reintentarse.
    */
   async processIncomingLead(leadgenId: string, pageId?: string) {
     const existing = await this.leadsRepo.findOne({
@@ -39,7 +43,25 @@ export class LeadsService {
       return existing;
     }
 
-    const data = await this.facebookService.getLeadData(leadgenId);
+    let data;
+    try {
+      data = await this.facebookService.getLeadData(leadgenId);
+    } catch (err) {
+      if (err instanceof GraphApiError && err.isSimulatedLead) {
+        // Caso esperado: evento de prueba desde el panel de Meta.
+        // Se registra como info, no como error, para no ensuciar
+        // las alertas con algo que no requiere acción.
+        this.logger.log(
+          `Webhook de prueba recibido (leadgen_id simulado: ${leadgenId}). No se guarda, es comportamiento esperado.`,
+        );
+        return null;
+      }
+      // Cualquier otro caso (token vencido, permisos, rate limit, etc.)
+      // sí es un problema real: se relanza para que quede como ERROR
+      // en los logs y puedas detectarlo.
+      throw err;
+    }
+
     const flat = this.facebookService.parseFieldData(data.field_data);
 
     const lead = this.leadsRepo.create({
