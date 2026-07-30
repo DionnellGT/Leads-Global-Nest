@@ -64,10 +64,12 @@ export class LeadsService {
 
     const flat = this.facebookService.parseFieldData(data.field_data);
 
-    // Opcional: si falla, no debe frenar el guardado del lead.
-    const formName = data.form_id
-      ? await this.facebookService.getFormName(data.form_id)
-      : undefined;
+    // Datos opcionales: si fallan (ej. falta permiso ads_read/ads_management
+    // en el token), no deben impedir que el lead se guarde igual.
+    const [formName, campaignInfo] = await Promise.all([
+      data.form_id ? this.facebookService.getFormName(data.form_id) : undefined,
+      this.facebookService.getCampaignInfo(leadgenId),
+    ]);
 
     const lead = this.leadsRepo.create({
       leadgenId: data.id,
@@ -77,8 +79,8 @@ export class LeadsService {
       ciudad: flat['city'] || '',
       formId: data.form_id,
       formName,
-      campaignId: data.campaign_id,
-      campaignName: data.campaign_name,
+      campaignId: campaignInfo.campaignId,
+      campaignName: campaignInfo.campaignName,
       pageId,
       rawFieldData: flat,
       leadCreatedTime: new Date(data.created_time),

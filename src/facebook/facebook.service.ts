@@ -42,7 +42,10 @@ export class FacebookService {
 
   /**
    * Dado un leadgen_id (que llega por el webhook), pide a la Graph API
-   * todos los datos del lead: nombre, correo, teléfono, campaña, etc.
+   * los datos esenciales del lead: nombre, correo, teléfono, formulario.
+   * Solo pide campos garantizados por el permiso `leads_retrieval`
+   * (los datos de campaña se consultan aparte, ver getCampaignInfo,
+   * porque requieren un permiso distinto: ads_management/ads_read).
    */
   async getLeadData(leadgenId: string): Promise<FacebookLeadData> {
     const url = `${this.baseUrl}/${leadgenId}`;
@@ -50,12 +53,38 @@ export class FacebookService {
       const { data } = await axios.get(url, {
         params: {
           access_token: this.pageAccessToken,
-          fields: 'id,created_time,form_id,field_data,campaign_id,campaign_name',
+          fields: 'id,created_time,form_id,field_data',
         },
       });
       return data;
     } catch (err) {
       throw this.toGraphApiError(err, leadgenId);
+    }
+  }
+
+  /**
+   * Datos de campaña (campaign_id/campaign_name) requieren un permiso
+   * distinto al de leads_retrieval (ads_management o ads_read). Se
+   * consultan aparte y de forma opcional: si el token no tiene ese
+   * permiso, el lead igual se guarda, solo sin estos datos.
+   */
+  async getCampaignInfo(
+    leadgenId: string,
+  ): Promise<{ campaignId?: string; campaignName?: string }> {
+    try {
+      const url = `${this.baseUrl}/${leadgenId}`;
+      const { data } = await axios.get(url, {
+        params: {
+          access_token: this.pageAccessToken,
+          fields: 'campaign_id,campaign_name',
+        },
+      });
+      return { campaignId: data.campaign_id, campaignName: data.campaign_name };
+    } catch (err) {
+      this.logger.warn(
+        `No se pudo obtener info de campaña para el lead ${leadgenId} (probablemente falta permiso ads_management/ads_read): ${(err as Error).message}`,
+      );
+      return {};
     }
   }
 
