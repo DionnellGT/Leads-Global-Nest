@@ -9,7 +9,6 @@ export interface FacebookLeadData {
   field_data: { name: string; values: string[] }[];
   campaign_id?: string;
   campaign_name?: string;
-  form_name?: string;
 }
 
 /**
@@ -51,13 +50,32 @@ export class FacebookService {
       const { data } = await axios.get(url, {
         params: {
           access_token: this.pageAccessToken,
-          fields:
-            'id,created_time,form_id,field_data,campaign_id,campaign_name,form_name',
+          fields: 'id,created_time,form_id,field_data,campaign_id,campaign_name',
         },
       });
       return data;
     } catch (err) {
       throw this.toGraphApiError(err, leadgenId);
+    }
+  }
+
+  /**
+   * El nombre del formulario no viene incluido en el objeto lead,
+   * así que se consulta aparte (opcional: si falla, no debe frenar
+   * el guardado del lead, solo se guarda sin nombre de formulario).
+   */
+  async getFormName(formId: string): Promise<string | undefined> {
+    try {
+      const url = `${this.baseUrl}/${formId}`;
+      const { data } = await axios.get(url, {
+        params: { access_token: this.pageAccessToken, fields: 'name' },
+      });
+      return data.name;
+    } catch (err) {
+      this.logger.warn(
+        `No se pudo obtener el nombre del formulario ${formId}: ${(err as Error).message}`,
+      );
+      return undefined;
     }
   }
 

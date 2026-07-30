@@ -64,6 +64,11 @@ export class LeadsService {
 
     const flat = this.facebookService.parseFieldData(data.field_data);
 
+    // Opcional: si falla, no debe frenar el guardado del lead.
+    const formName = data.form_id
+      ? await this.facebookService.getFormName(data.form_id)
+      : undefined;
+
     const lead = this.leadsRepo.create({
       leadgenId: data.id,
       nombre: flat['full_name'] || flat['first_name'] || '',
@@ -71,7 +76,7 @@ export class LeadsService {
       telefono: flat['phone_number'] || '',
       ciudad: flat['city'] || '',
       formId: data.form_id,
-      formName: data.form_name,
+      formName,
       campaignId: data.campaign_id,
       campaignName: data.campaign_name,
       pageId,
