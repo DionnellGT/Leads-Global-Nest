@@ -98,9 +98,10 @@ export class LeadsService {
 
     // Datos opcionales: si fallan (ej. falta permiso ads_read/ads_management
     // en el token), no deben impedir que el lead se guarde igual.
-    const [formName, campaignInfo] = await Promise.all([
+    const [formName, campaignInfo, pageName] = await Promise.all([
       data.form_id ? this.facebookService.getFormName(data.form_id) : undefined,
       this.facebookService.getCampaignInfo(leadgenId),
+      pageId ? this.facebookService.getPageName(pageId) : undefined,
     ]);
 
     const lead = this.leadsRepo.create({
@@ -114,6 +115,7 @@ export class LeadsService {
       campaignId: campaignInfo.campaignId,
       campaignName: campaignInfo.campaignName,
       pageId,
+      pageName,
       rawFieldData: flat,
       leadCreatedTime: new Date(data.created_time),
       estado: 'Nuevo',

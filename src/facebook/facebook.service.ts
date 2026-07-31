@@ -109,6 +109,27 @@ export class FacebookService {
   }
 
   /**
+   * El webhook solo manda el page_id (ej. "2252250168381472"), no el
+   * nombre de la página ("Remate de Terrenos"). Se consulta aparte,
+   * igual que el nombre del formulario, para poder distinguir de qué
+   * página vino cada lead sin frenar el guardado si falla.
+   */
+  async getPageName(pageId: string): Promise<string | undefined> {
+    try {
+      const url = `${this.baseUrl}/${pageId}`;
+      const { data } = await axios.get(url, {
+        params: { access_token: this.pageAccessToken, fields: 'name' },
+      });
+      return data.name;
+    } catch (err) {
+      this.logger.warn(
+        `No se pudo obtener el nombre de la página ${pageId}: ${(err as Error).message}`,
+      );
+      return undefined;
+    }
+  }
+
+  /**
    * Traduce el error crudo de Axios/Graph API en un GraphApiError,
    * distinguiendo el caso típico de "lead simulado desde el panel de
    * Meta" (leadgen_id que no existe realmente, ej. el botón "Probar")

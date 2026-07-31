@@ -55,6 +55,10 @@ export class Lead {
   @Column({ name: 'page_id', nullable: true })
   pageId: string;
 
+  @ApiPropertyOptional({ description: 'Nombre de la página de Facebook/Instagram (ej. "Remate de Terrenos", "Fundo El Avellano")' })
+  @Column({ name: 'page_name', nullable: true })
+  pageName: string;
+
   // Guardamos todas las preguntas del formulario tal cual, por si hay
   // campos personalizados que no mapeamos a columnas propias
   @ApiPropertyOptional({ type: 'object' })
