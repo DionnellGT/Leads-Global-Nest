@@ -16,6 +16,38 @@ export interface PaginatedLeads {
   totalPages: number;
 }
 
+export interface LeadEstadoCount {
+  estado: string;
+  count: number;
+}
+
+export interface LeadsByDay {
+  date: string;
+  count: number;
+}
+
+export interface TopForm {
+  formName: string;
+  count: number;
+}
+
+export interface TodayVsYesterday {
+  today: number;
+  yesterdaySameTime: number;
+  diff: number;
+  diffPercent: number | null; // null cuando ayer fue 0 (no hay % que calcular)
+}
+
+export interface LeadStats {
+  total: number;
+  leadsToday: number;
+  leadsThisWeek: number;
+  todayVsYesterday: TodayVsYesterday;
+  byEstado: LeadEstadoCount[];
+  leadsByDay: LeadsByDay[];
+  topForms: TopForm[];
+}
+
 @Injectable()
 export class LeadsService {
   private readonly logger = new Logger(LeadsService.name);
@@ -146,6 +178,123 @@ export class LeadsService {
   async updateEstado(id: string, estado: string) {
     await this.leadsRepo.update(id, { estado });
     return this.leadsRepo.findOne({ where: { id } });
+  }
+
+  /**
+   * Métricas agregadas para el dashboard: totales, desglose por estado,
+   * serie de los últimos 14 días (para el gráfico), y los formularios
+   * y campañas con más leads.
+   */
+  async getStats(): Promise<LeadStats> {
+    const now = new Date();
+    const startOfToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
+    const startOfWeek = new Date(startOfToday);
+    startOfWeek.setDate(startOfWeek.getDate() - 6); // últimos 7 días incl. hoy
+    const startOfSeries = new Date(startOfToday);
+    startOfSeries.setDate(startOfSeries.getDate() - 13); // últimos 14 días
+
+    // "Ayer a esta misma hora": mismo rango horario que hoy, pero un día antes.
+    // Ej. si son las 14:30 de hoy, se compara con [ayer 00:00, ayer 14:30).
+    const startOfYesterday = new Date(startOfToday);
+    startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+    const yesterdaySameTimeCutoff = new Date(
+      startOfYesterday.getTime() + (now.getTime() - startOfToday.getTime()),
+    );
+
+    const [
+      total,
+      leadsToday,
+      leadsThisWeek,
+      leadsYesterdaySameTime,
+      byEstadoRaw,
+      byDayRaw,
+      byFormRaw,
+    ] = await Promise.all([
+        this.leadsRepo.count(),
+        this.leadsRepo
+          .createQueryBuilder('lead')
+          .where('lead.leadCreatedTime >= :start', { start: startOfToday })
+          .getCount(),
+        this.leadsRepo
+          .createQueryBuilder('lead')
+          .where('lead.leadCreatedTime >= :start', { start: startOfWeek })
+          .getCount(),
+        this.leadsRepo
+          .createQueryBuilder('lead')
+          .where('lead.leadCreatedTime >= :start', { start: startOfYesterday })
+          .andWhere('lead.leadCreatedTime < :end', {
+            end: yesterdaySameTimeCutoff,
+          })
+          .getCount(),
+        this.leadsRepo
+          .createQueryBuilder('lead')
+          .select('lead.estado', 'estado')
+          .addSelect('COUNT(*)', 'count')
+          .groupBy('lead.estado')
+          .getRawMany<{ estado: string; count: string }>(),
+        this.leadsRepo
+          .createQueryBuilder('lead')
+          .select("TO_CHAR(lead.leadCreatedTime, 'YYYY-MM-DD')", 'day')
+          .addSelect('COUNT(*)', 'count')
+          .where('lead.leadCreatedTime >= :start', { start: startOfSeries })
+          .groupBy('day')
+          .orderBy('day', 'ASC')
+          .getRawMany<{ day: string; count: string }>(),
+        this.leadsRepo
+          .createQueryBuilder('lead')
+          .select('lead.formName', 'formName')
+          .addSelect('COUNT(*)', 'count')
+          .where('lead.formName IS NOT NULL')
+          .groupBy('lead.formName')
+          .orderBy('count', 'DESC')
+          .limit(5)
+          .getRawMany<{ formName: string; count: string }>(),
+      ]);
+
+    // Rellena los días sin leads con 0, para que el gráfico no tenga huecos.
+    const leadsByDay: { date: string; count: number }[] = [];
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(startOfSeries);
+      d.setDate(d.getDate() + i);
+      const key = d.toISOString().slice(0, 10);
+      const found = byDayRaw.find((r) => r.day === key);
+      leadsByDay.push({ date: key, count: found ? Number(found.count) : 0 });
+    }
+
+    const estados: LeadEstadoCount[] = ['Nuevo', 'Contactado', 'Vendido'].map(
+      (estado) => ({
+        estado,
+        count: Number(
+          byEstadoRaw.find((r) => r.estado === estado)?.count ?? 0,
+        ),
+      }),
+    );
+
+    const diff = leadsToday - leadsYesterdaySameTime;
+    const diffPercent =
+      leadsYesterdaySameTime > 0 ? (diff / leadsYesterdaySameTime) * 100 : null;
+
+    return {
+      total,
+      leadsToday,
+      leadsThisWeek,
+      todayVsYesterday: {
+        today: leadsToday,
+        yesterdaySameTime: leadsYesterdaySameTime,
+        diff,
+        diffPercent,
+      },
+      byEstado: estados,
+      leadsByDay,
+      topForms: byFormRaw.map((r) => ({
+        formName: r.formName,
+        count: Number(r.count),
+      })),
+    };
   }
 
   /**
