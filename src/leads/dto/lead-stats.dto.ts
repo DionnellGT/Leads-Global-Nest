@@ -45,6 +45,9 @@ export class LeadStatsDto {
   @ApiProperty({ description: 'Leads recibidos en los últimos 7 días' })
   leadsThisWeek: number;
 
+  @ApiProperty({ description: 'Leads recibidos en el mes calendario actual' })
+  leadsThisMonth: number;
+
   @ApiProperty({ type: TodayVsYesterdayDto })
   todayVsYesterday: TodayVsYesterdayDto;
 

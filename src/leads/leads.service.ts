@@ -42,6 +42,7 @@ export interface LeadStats {
   total: number;
   leadsToday: number;
   leadsThisWeek: number;
+  leadsThisMonth: number;
   todayVsYesterday: TodayVsYesterday;
   byEstado: LeadEstadoCount[];
   leadsByDay: LeadsByDay[];
@@ -221,6 +222,7 @@ export class LeadsService {
     );
     const startOfWeek = new Date(startOfToday);
     startOfWeek.setDate(startOfWeek.getDate() - 6); // últimos 7 días incl. hoy
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfSeries = new Date(startOfToday);
     startOfSeries.setDate(startOfSeries.getDate() - 13); // últimos 14 días
 
@@ -240,6 +242,7 @@ export class LeadsService {
       total,
       leadsToday,
       leadsThisWeek,
+      leadsThisMonth,
       leadsYesterdaySameTime,
       byEstadoRaw,
       byDayRaw,
@@ -255,6 +258,11 @@ export class LeadsService {
           this.leadsRepo
             .createQueryBuilder('lead')
             .where('lead.leadCreatedTime >= :start', { start: startOfWeek }),
+        ).getCount(),
+        withPageFilter(
+          this.leadsRepo
+            .createQueryBuilder('lead')
+            .where('lead.leadCreatedTime >= :start', { start: startOfMonth }),
         ).getCount(),
         withPageFilter(
           this.leadsRepo
@@ -321,6 +329,7 @@ export class LeadsService {
       total,
       leadsToday,
       leadsThisWeek,
+      leadsThisMonth,
       todayVsYesterday: {
         today: leadsToday,
         yesterdaySameTime: leadsYesterdaySameTime,
