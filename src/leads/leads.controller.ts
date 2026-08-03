@@ -23,6 +23,7 @@ import { GraphApiError } from '../facebook/facebook.service';
 import { LeadFiltersDto } from './dto/lead-filters.dto';
 import { UpdateLeadEstadoDto } from './dto/update-estado.dto';
 import { PaginatedLeadsDto } from './dto/paginated-leads.dto';
+import { LeadStatsDto } from './dto/lead-stats.dto';
 import { Lead } from './entities/lead.entity';
 
 @ApiTags('leads')
@@ -101,6 +102,26 @@ export class LeadsController {
   @Get('leads')
   findAll(@Query() filters: LeadFiltersDto) {
     return this.leadsService.findAll(filters);
+  }
+
+  // ── 3.5) Métricas agregadas para el dashboard ──
+  @ApiOperation({
+    summary: 'Métricas agregadas de leads (totales, por estado, serie diaria)',
+  })
+  @ApiResponse({ status: 200, description: 'Estadísticas', type: LeadStatsDto })
+  @Get('leads/stats')
+  getStats() {
+    return this.leadsService.getStats();
+  }
+
+  // ── 3.6) Páginas distintas con leads (para poblar el filtro) ──
+  @ApiOperation({
+    summary: 'Lista las páginas de Facebook/Instagram con leads guardados',
+  })
+  @ApiResponse({ status: 200, description: 'Páginas disponibles' })
+  @Get('leads/pages')
+  getAvailablePages() {
+    return this.leadsService.getAvailablePages();
   }
 
   // ── 4) Actualizar estado de un lead (Nuevo/Contactado/Vendido) ──

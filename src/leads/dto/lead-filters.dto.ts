@@ -49,6 +49,13 @@ export class LeadFiltersDto {
   campaignId?: string;
 
   @ApiPropertyOptional({
+    description: 'ID de la página de Facebook/Instagram de origen del lead',
+  })
+  @IsOptional()
+  @IsString()
+  pageId?: string;
+
+  @ApiPropertyOptional({
     description: 'Búsqueda libre por nombre, correo o teléfono',
   })
   @IsOptional()

@@ -149,6 +149,9 @@ export class LeadsService {
         campaignId: filters.campaignId,
       });
     }
+    if (filters.pageId) {
+      qb.andWhere('lead.pageId = :pageId', { pageId: filters.pageId });
+    }
     if (filters.search) {
       qb.andWhere(
         '(lead.nombre ILIKE :search OR lead.correo ILIKE :search OR lead.telefono ILIKE :search)',
@@ -157,6 +160,28 @@ export class LeadsService {
     }
 
     return qb;
+  }
+
+  /**
+   * Lista las páginas distintas que ya tienen leads guardados, para
+   * poblar el filtro de "Página" en el frontend sin tener que
+   * hardcodear IDs ahí.
+   */
+  async getAvailablePages(): Promise<{ pageId: string; pageName: string }[]> {
+    const rows = await this.leadsRepo
+      .createQueryBuilder('lead')
+      .select('lead.pageId', 'pageId')
+      .addSelect('lead.pageName', 'pageName')
+      .where('lead.pageId IS NOT NULL')
+      .groupBy('lead.pageId')
+      .addGroupBy('lead.pageName')
+      .orderBy('lead.pageName', 'ASC')
+      .getRawMany<{ pageId: string; pageName: string | null }>();
+
+    return rows.map((r) => ({
+      pageId: r.pageId,
+      pageName: r.pageName ?? r.pageId,
+    }));
   }
 
   async findAll(filters: LeadFilters): Promise<PaginatedLeads> {
