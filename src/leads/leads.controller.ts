@@ -110,8 +110,8 @@ export class LeadsController {
   })
   @ApiResponse({ status: 200, description: 'Estadísticas', type: LeadStatsDto })
   @Get('leads/stats')
-  getStats() {
-    return this.leadsService.getStats();
+  getStats(@Query('pageId') pageId?: string) {
+    return this.leadsService.getStats(pageId);
   }
 
   // ── 3.6) Páginas distintas con leads (para poblar el filtro) ──

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
 import * as ExcelJS from 'exceljs';
 import { Lead } from './entities/lead.entity';
 import { FacebookService, GraphApiError } from '../facebook/facebook.service';
@@ -212,7 +212,7 @@ export class LeadsService {
    * serie de los últimos 14 días (para el gráfico), y los formularios
    * y campañas con más leads.
    */
-  async getStats(): Promise<LeadStats> {
+  async getStats(pageId?: string): Promise<LeadStats> {
     const now = new Date();
     const startOfToday = new Date(
       now.getFullYear(),
@@ -232,6 +232,10 @@ export class LeadsService {
       startOfYesterday.getTime() + (now.getTime() - startOfToday.getTime()),
     );
 
+    // Aplica el filtro de página (si viene) a cualquier query builder.
+    const withPageFilter = <T extends SelectQueryBuilder<Lead>>(qb: T): T =>
+      pageId ? qb.andWhere('lead.pageId = :pageId', { pageId }) : qb;
+
     const [
       total,
       leadsToday,
@@ -241,41 +245,49 @@ export class LeadsService {
       byDayRaw,
       byFormRaw,
     ] = await Promise.all([
-        this.leadsRepo.count(),
-        this.leadsRepo
-          .createQueryBuilder('lead')
-          .where('lead.leadCreatedTime >= :start', { start: startOfToday })
-          .getCount(),
-        this.leadsRepo
-          .createQueryBuilder('lead')
-          .where('lead.leadCreatedTime >= :start', { start: startOfWeek })
-          .getCount(),
-        this.leadsRepo
-          .createQueryBuilder('lead')
-          .where('lead.leadCreatedTime >= :start', { start: startOfYesterday })
-          .andWhere('lead.leadCreatedTime < :end', {
-            end: yesterdaySameTimeCutoff,
-          })
-          .getCount(),
-        this.leadsRepo
-          .createQueryBuilder('lead')
-          .select('lead.estado', 'estado')
-          .addSelect('COUNT(*)', 'count')
-          .groupBy('lead.estado')
-          .getRawMany<{ estado: string; count: string }>(),
-        this.leadsRepo
-          .createQueryBuilder('lead')
-          .select("TO_CHAR(lead.leadCreatedTime, 'YYYY-MM-DD')", 'day')
-          .addSelect('COUNT(*)', 'count')
-          .where('lead.leadCreatedTime >= :start', { start: startOfSeries })
+        withPageFilter(this.leadsRepo.createQueryBuilder('lead')).getCount(),
+        withPageFilter(
+          this.leadsRepo
+            .createQueryBuilder('lead')
+            .where('lead.leadCreatedTime >= :start', { start: startOfToday }),
+        ).getCount(),
+        withPageFilter(
+          this.leadsRepo
+            .createQueryBuilder('lead')
+            .where('lead.leadCreatedTime >= :start', { start: startOfWeek }),
+        ).getCount(),
+        withPageFilter(
+          this.leadsRepo
+            .createQueryBuilder('lead')
+            .where('lead.leadCreatedTime >= :start', { start: startOfYesterday })
+            .andWhere('lead.leadCreatedTime < :end', {
+              end: yesterdaySameTimeCutoff,
+            }),
+        ).getCount(),
+        withPageFilter(
+          this.leadsRepo
+            .createQueryBuilder('lead')
+            .select('lead.estado', 'estado')
+            .addSelect('COUNT(*)', 'count')
+            .groupBy('lead.estado'),
+        ).getRawMany<{ estado: string; count: string }>(),
+        withPageFilter(
+          this.leadsRepo
+            .createQueryBuilder('lead')
+            .select("TO_CHAR(lead.leadCreatedTime, 'YYYY-MM-DD')", 'day')
+            .addSelect('COUNT(*)', 'count')
+            .where('lead.leadCreatedTime >= :start', { start: startOfSeries }),
+        )
           .groupBy('day')
           .orderBy('day', 'ASC')
           .getRawMany<{ day: string; count: string }>(),
-        this.leadsRepo
-          .createQueryBuilder('lead')
-          .select('lead.formName', 'formName')
-          .addSelect('COUNT(*)', 'count')
-          .where('lead.formName IS NOT NULL')
+        withPageFilter(
+          this.leadsRepo
+            .createQueryBuilder('lead')
+            .select('lead.formName', 'formName')
+            .addSelect('COUNT(*)', 'count')
+            .where('lead.formName IS NOT NULL'),
+        )
           .groupBy('lead.formName')
           .orderBy('count', 'DESC')
           .limit(5)
