@@ -140,7 +140,7 @@ export class LeadsService {
     if (filters.desde && filters.hasta) {
       qb.andWhere('lead.leadCreatedTime BETWEEN :desde AND :hasta', {
         desde: new Date(filters.desde),
-        hasta: new Date(filters.hasta),
+        hasta: new Date(filters.hasta + "T23:59:59.999Z"),
       });
     }
     if (filters.estado) qb.andWhere('lead.estado = :estado', { estado: filters.estado });
