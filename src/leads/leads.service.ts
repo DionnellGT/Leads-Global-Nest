@@ -137,11 +137,32 @@ export class LeadsService {
       .createQueryBuilder('lead')
       .orderBy('lead.leadCreatedTime', 'DESC');
 
-    if (filters.desde && filters.hasta) {
-      qb.andWhere('lead.leadCreatedTime BETWEEN :desde AND :hasta', {
-        desde: new Date(filters.desde),
-        hasta: new Date(filters.hasta + "T23:59:59.999Z"),
-      });
+    if (filters.desde || filters.hasta) {
+      // Las fechas llegan como 'YYYY-MM-DD' (fecha local del usuario en
+      // Santiago). Para filtrar correctamente en UTC (cómo Neon almacena
+      // los timestamps), convertimos cada extremo al inicio/fin del día
+      // en la zona horaria de Chile, que es UTC-3 o UTC-4 según horario
+      // de verano. Usamos el offset fijo más conservador para no excluir
+      // leads legítimos: medianoche Santiago = 03:00 UTC (UTC-3, verano)
+      // o 04:00 UTC (UTC-4, invierno). Como no tenemos el offset exacto
+      // en tiempo de ejecución sin instalar una librería de IANA, usamos
+      // la estrategia más robusta: desde = 00:00 Santiago (= -04:00 más
+      // conservador) y hasta = fin del día 23:59:59 local.
+      //
+      // Alternativa más exacta: usar AT TIME ZONE en la query de Postgres,
+      // que sí conoce el historial de DST de 'America/Santiago':
+      if (filters.desde) {
+        qb.andWhere(
+          `lead.leadCreatedTime >= ((:desde)::date)::timestamptz AT TIME ZONE 'America/Santiago'`,
+          { desde: filters.desde },
+        );
+      }
+      if (filters.hasta) {
+        qb.andWhere(
+          `lead.leadCreatedTime < (((:hasta)::date + interval '1 day'))::timestamptz AT TIME ZONE 'America/Santiago'`,
+          { hasta: filters.hasta },
+        );
+      }
     }
     if (filters.estado) qb.andWhere('lead.estado = :estado', { estado: filters.estado });
     if (filters.formId) qb.andWhere('lead.formId = :formId', { formId: filters.formId });
@@ -353,31 +374,40 @@ export class LeadsService {
   async exportToExcel(filters: LeadFilters): Promise<Buffer> {
     const leads = await this.buildFilteredQuery(filters).getMany();
 
+    // El servidor corre en UTC (Railway). Para que el Excel muestre la hora
+    // en la zona horaria de Chile (sin importar dónde corre el servidor),
+    // forzamos 'America/Santiago' explícitamente. Esta zona ya maneja
+    // automáticamente el cambio de horario de verano (UTC-3/UTC-4).
+    const formatDate = (date: Date | null | undefined) => {
+      if (!date) return '';
+      return date.toLocaleString('es-CL', { timeZone: 'America/Santiago' });
+    };
+
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Leads');
 
     sheet.columns = [
-      { header: 'Fecha', key: 'fecha', width: 20 },
+      { header: 'Fecha', key: 'fecha', width: 22 },
       { header: 'Nombre', key: 'nombre', width: 25 },
       { header: 'Teléfono', key: 'telefono', width: 18 },
       { header: 'Correo', key: 'correo', width: 28 },
       { header: 'Ciudad', key: 'ciudad', width: 18 },
-      { header: 'Campaña', key: 'campania', width: 22 },
       { header: 'Página', key: 'pagina', width: 22 },
-      { header: 'Formulario', key: 'formulario', width: 22 },
+      { header: 'Campaña', key: 'campania', width: 22 },
+      { header: 'Formulario', key: 'formulario', width: 24 },
       { header: 'Estado', key: 'estado', width: 15 },
     ];
     sheet.getRow(1).font = { bold: true };
 
     for (const lead of leads) {
       sheet.addRow({
-        fecha: lead.leadCreatedTime?.toLocaleString('es-CL') ?? '',
+        fecha: formatDate(lead.leadCreatedTime),
         nombre: lead.nombre,
         telefono: lead.telefono,
         correo: lead.correo,
         ciudad: lead.ciudad,
-        campania: lead.campaignName,
         pagina: lead.pageName,
+        campania: lead.campaignName,
         formulario: lead.formName,
         estado: lead.estado,
       });
