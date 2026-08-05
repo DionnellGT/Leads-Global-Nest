@@ -363,6 +363,7 @@ export class LeadsService {
       { header: 'Correo', key: 'correo', width: 28 },
       { header: 'Ciudad', key: 'ciudad', width: 18 },
       { header: 'Campaña', key: 'campania', width: 22 },
+      { header: 'Página', key: 'pagina', width: 22 },
       { header: 'Formulario', key: 'formulario', width: 22 },
       { header: 'Estado', key: 'estado', width: 15 },
     ];
@@ -376,6 +377,7 @@ export class LeadsService {
         correo: lead.correo,
         ciudad: lead.ciudad,
         campania: lead.campaignName,
+        pagina: lead.pageName,
         formulario: lead.formName,
         estado: lead.estado,
       });
