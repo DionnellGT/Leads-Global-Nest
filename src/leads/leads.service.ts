@@ -370,6 +370,8 @@ export class LeadsService {
    * Genera un archivo Excel en memoria (buffer) con los leads filtrados.
    * A propósito ignora page/limit: exporta TODOS los resultados que
    * cumplen los filtros, no solo la página visible en pantalla.
+   * Incluye columnas dinámicas para cualquier pregunta personalizada
+   * que venga en rawFieldData (ej. preguntas de opción múltiple).
    */
   async exportToExcel(filters: LeadFilters): Promise<Buffer> {
     const leads = await this.buildFilteredQuery(filters).getMany();
@@ -382,6 +384,25 @@ export class LeadsService {
       if (!date) return '';
       return date.toLocaleString('es-CL', { timeZone: 'America/Santiago' });
     };
+
+    // Campos estándar que ya tienen columna propia en la tabla — se excluyen
+    // del bloque de preguntas personalizadas para no duplicarlos.
+    const STANDARD_FIELDS = new Set([
+      'full_name', 'first_name', 'last_name',
+      'email', 'phone_number', 'city',
+      'inbox_url',  // campo interno de Meta, no es una pregunta del usuario
+    ]);
+
+    // Recorre todos los leads para recolectar las claves personalizadas,
+    // preservando el orden en que aparecen por primera vez.
+    const customKeySet = new Set<string>();
+    for (const lead of leads) {
+      if (!lead.rawFieldData) continue;
+      for (const key of Object.keys(lead.rawFieldData)) {
+        if (!STANDARD_FIELDS.has(key)) customKeySet.add(key);
+      }
+    }
+    const customKeys = Array.from(customKeySet);
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Leads');
@@ -396,11 +417,18 @@ export class LeadsService {
       { header: 'Campaña', key: 'campania', width: 22 },
       { header: 'Formulario', key: 'formulario', width: 24 },
       { header: 'Estado', key: 'estado', width: 15 },
+      // Una columna por cada pregunta personalizada encontrada en este export.
+      // El header usa la clave de Meta tal cual (ej. "¿Qué te llamó la atención?").
+      ...customKeys.map((key) => ({
+        header: key,
+        key: `custom_${key}`,
+        width: 30,
+      })),
     ];
     sheet.getRow(1).font = { bold: true };
 
     for (const lead of leads) {
-      sheet.addRow({
+      const row: Record<string, string> = {
         fecha: formatDate(lead.leadCreatedTime),
         nombre: lead.nombre,
         telefono: lead.telefono,
@@ -410,7 +438,15 @@ export class LeadsService {
         campania: lead.campaignName,
         formulario: lead.formName,
         estado: lead.estado,
-      });
+      };
+
+      // Agrega el valor de cada pregunta personalizada (vacío si ese lead
+      // no respondió esa pregunta, ej. era de otro formulario).
+      for (const key of customKeys) {
+        row[`custom_${key}`] = lead.rawFieldData?.[key] ?? '';
+      }
+
+      sheet.addRow(row);
     }
 
     const buffer = await workbook.xlsx.writeBuffer();
