@@ -5,7 +5,21 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  app.enableCors(); // para que React (otro puerto/dominio) pueda llamar a la API
+
+  // En producción se leen los orígenes permitidos desde la variable de entorno
+  // ALLOWED_ORIGINS (lista separada por comas), con fallback a localhost para
+  // desarrollo local. Ejemplo Railway:
+  // ALLOWED_ORIGINS=https://leads.elavellano.cl,https://www.elavellano.cl
+  const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+    : ['http://localhost:5173', 'http://localhost:3000'];
+
+  app.enableCors({
+    origin: allowedOrigins,
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+  });
 
   // Valida y transforma automáticamente los DTOs (query params, body, etc.)
   app.useGlobalPipes(
