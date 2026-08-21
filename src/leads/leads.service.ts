@@ -388,9 +388,9 @@ export class LeadsService {
     // Campos estándar que ya tienen columna propia en la tabla — se excluyen
     // del bloque de preguntas personalizadas para no duplicarlos.
     const STANDARD_FIELDS = new Set([
-      'full_name', 'first_name', 'last_name', 'nombre_completo',
-      'email', 'correo_electrónico',
-      'phone_number', 'número_de_teléfono',
+      'full_name', 'first_name', 'last_name',
+      'email', 
+      'phone_number',
       'city', 'ciudad',
       'inbox_url',  // campo interno de Meta, no es una pregunta del usuario
     ]);
