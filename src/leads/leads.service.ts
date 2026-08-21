@@ -107,9 +107,9 @@ export class LeadsService {
 
     const lead = this.leadsRepo.create({
       leadgenId: data.id,
-      nombre: flat['full_name'] || flat['first_name'] || '',
-      correo: flat['email'] || '',
-      telefono: flat['phone_number'] || '',
+      nombre: flat['full_name'] || flat['first_name'] || flat['nombre_completo'] ||'',
+      correo: flat['email'] || flat['correo_electrónico'] || '',
+      telefono: flat['phone_number'] || flat['número_de_teléfono'] || '',
       ciudad: flat['city'] || '',
       formId: data.form_id,
       formName,
