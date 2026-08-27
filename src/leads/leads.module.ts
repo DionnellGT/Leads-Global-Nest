@@ -9,5 +9,6 @@ import { FacebookModule } from '../facebook/facebook.module';
   imports: [TypeOrmModule.forFeature([Lead]), FacebookModule],
   controllers: [LeadsController],
   providers: [LeadsService],
+  exports: [LeadsService],
 })
 export class LeadsModule {}

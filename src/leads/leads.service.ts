@@ -128,6 +128,48 @@ export class LeadsService {
   }
 
   /**
+   * Versión de processIncomingLead para el import histórico desde formularios:
+   * recibe los datos del lead ya traídos (field_data, id, created_time),
+   * más los datos del formulario y página ya conocidos, por lo que no
+   * necesita llamar a la Graph API de nuevo.
+   * Es idempotente: si el leadgen_id ya existe, retorna null sin error.
+   */
+  async processLeadData(
+    data: import('../facebook/facebook.service').FacebookLeadData,
+    pageId?: string,
+    pageName?: string,
+    formId?: string,
+    formName?: string,
+  ) {
+    const existing = await this.leadsRepo.findOne({
+      where: { leadgenId: data.id },
+    });
+    if (existing) {
+      return null; // ya existía, se ignora sin loguear para no saturar los logs
+    }
+
+    const flat = this.facebookService.parseFieldData(data.field_data ?? []);
+
+    const lead = this.leadsRepo.create({
+      leadgenId: data.id,
+      nombre: flat['full_name'] || flat['first_name'] || flat['nombre_completo'] || '',
+      correo: flat['email'] || flat['correo_electrónico'] || '',
+      telefono: flat['phone_number'] || flat['número_de_teléfono'] || '',
+      ciudad: flat['city'] || '',
+      formId: formId ?? data.form_id,
+      formName,
+      pageId,
+      pageName,
+      rawFieldData: flat,
+      leadCreatedTime: new Date(data.created_time),
+      estado: 'Nuevo',
+    });
+
+    const saved = await this.leadsRepo.save(lead);
+    return saved;
+  }
+
+  /**
    * Arma el query base con todos los filtros (fecha, estado, form,
    * campaña y búsqueda de texto libre), sin paginar. Se reutiliza
    * tanto para el listado paginado como para la exportación a Excel.

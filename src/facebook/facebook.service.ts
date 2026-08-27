@@ -130,6 +130,33 @@ export class FacebookService {
   }
 
   /**
+   * Obtiene la lista paginada de leads de un formulario específico.
+   * La Graph API devuelve hasta 100 leads por página.
+   * cursor es el after-cursor de paginación de Meta.
+   */
+  async getFormLeads(
+    formId: string,
+    cursor?: string,
+  ): Promise<{
+    data: FacebookLeadData[];
+    paging?: {
+      cursors?: { before?: string; after?: string };
+      next?: string;
+    };
+  }> {
+    const url = `${this.baseUrl}/${formId}/leads`;
+    const params: Record<string, string | number> = {
+      access_token: this.pageAccessToken,
+      fields: 'id,created_time,form_id,field_data',
+      limit: 100,
+    };
+    if (cursor) params.after = cursor;
+
+    const { data } = await axios.get(url, { params });
+    return data;
+  }
+
+  /**
    * Traduce el error crudo de Axios/Graph API en un GraphApiError,
    * distinguiendo el caso típico de "lead simulado desde el panel de
    * Meta" (leadgen_id que no existe realmente, ej. el botón "Probar")
